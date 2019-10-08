@@ -6,11 +6,11 @@ import (
 )
 
 type Response struct {
-	status      int
-	result      string
-	message     string
-	content     interface{}
-	contentType string
+	status      int         `json:"-"`
+	Result      string      `json:"result"`
+	Message     string      `json:"message,omitempty""`
+	Content     interface{} `json:"content,omitempty"`
+	contentType string      `json:"-"`
 }
 
 func (this *Response) HasError() bool {
@@ -20,59 +20,68 @@ func (this *Response) HasError() bool {
 	return false
 }
 
-func InvalidParameter(message string) *Response {
+func InvalidParameter(Message string) *Response {
 	return &Response{
 		status:  http.StatusBadRequest,
-		result:  "InvalidParameter",
-		message: message,
+		Result:  "InvalidParameter",
+		Message: Message,
 	}
 }
 
 func NotLoginError() *Response {
 	return &Response{
 		status: http.StatusForbidden,
-		result: "UserNotLogin",
+		Result: "UserNotLogin",
 	}
 }
 
-func NotFoundError(what string, message string) *Response {
+func NotFoundError(what string, Message string) *Response {
 	return &Response{
 		status:  http.StatusNotFound,
-		result:  fmt.Sprintf("%sNotFound", what),
-		message: message,
+		Result:  fmt.Sprintf("%sNotFound", what),
+		Message: Message,
 	}
 }
 
-func SystemError(what string, message string) *Response {
+func SystemError(what string, Message string) *Response {
 	return &Response{
 		status:  http.StatusServiceUnavailable,
-		result:  fmt.Sprintf("%sNotFound", what),
-		message: message,
+		Result:  fmt.Sprintf("%sError", what),
+		Message: Message,
 	}
 }
 
-func PermissionDenied(who string, message string) *Response {
+func PermissionDenied(who string, Message string) *Response {
 	return &Response{
 		status:  http.StatusForbidden,
-		result:  fmt.Sprintf("%sPermissionDenied", who),
-		message: message,
+		Result:  fmt.Sprintf("%sPermissionDenied", who),
+		Message: Message,
 	}
 }
 
-func JsonResponse(status int, data interface{}) *Response {
+func Json(data interface{}) *Response {
 	return &Response{
 		status:      http.StatusOK,
-		result:      "ok",
-		content:     data,
+		Result:      "ok",
+		Content:     data,
 		contentType: "application/json",
 	}
 }
 
-func StringResponse(status int, data string) *Response {
+func String(data string) *Response {
 	return &Response{
 		status:      http.StatusOK,
-		result:      "ok",
-		content:     data,
+		Result:      "ok",
+		Content:     data,
 		contentType: "text/plain",
+	}
+}
+
+func OK() *Response {
+	return &Response{
+		status:      http.StatusOK,
+		Result:      "ok",
+		Content:     "",
+		contentType: "application/json",
 	}
 }

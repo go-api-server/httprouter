@@ -6,5 +6,6 @@ import (
 
 type parameter struct {
 	NotNull bool
+	Field   string
 	Type    reflect.Type
 }

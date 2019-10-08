@@ -55,7 +55,8 @@ func getRequestKey(method string, uri string, uriPrefix string) string {
 }
 
 func getRequestHandler(method string, uri string) *requestHandler {
-	key := getRequestKey(method, uri, "")
+	arr := strings.Split(uri, "?")
+	key := getRequestKey(method, arr[0], "")
 	hdl, ok := uriHandlerMapper[key]
 	if !ok {
 		return nil
@@ -108,51 +109,72 @@ func (this *router) AppendFilter(filter Filter) {
 
 func (this *router) SetRequestHandler(method string, uri string, fn interface{}) {
 	typeof := reflect.TypeOf(fn)
+
 	if typeof.Kind() != reflect.Func {
 		fmt.Printf("%s is not a func\n", typeof.Name())
 		return
 	}
 
-	key := getRequestKey(method, this.uriPrefix, uri)
-	hdl := &requestHandler{
-		beforeFilterArray: this.beforeFilterArray,
-		afterFilterArray:  this.afterFilterArray,
-		method:            method,
-		uri:               uri,
-		handleFunc:        fn,
-		handleFuncType:    typeof,
-		handleFuncParams:  make(map[string]*parameter),
+	if typeof.NumIn() < 1 {
+		fmt.Printf("%s need one parameter least\n", typeof.Name())
+		return
 	}
 
-	for i := 0; i < typeof.NumIn(); i++ {
-		kind := typeof.In(i).Kind()
-		if kind == reflect.Func || kind == reflect.Map || kind == reflect.Slice {
+	if typeof.In(0).Kind() != reflect.Ptr {
+		fmt.Printf("%s first parameter must be *Context\n", typeof.Name())
+		return
+	}
+
+	first := typeof.In(0).Elem()
+	if first.Name() != reflect.TypeOf(Context{}).Name() {
+		fmt.Printf("%s first parameter must be *Context\n", typeof.Name())
+		return
+	}
+
+	if typeof.NumIn() < 2 {
+		return
+	}
+
+	second := typeof.In(1)
+	if second.Kind() != reflect.Struct {
+		fmt.Printf("%s second parameter must be struct\n", typeof.Name())
+		return
+	}
+
+	key := getRequestKey(method, uri, this.uriPrefix)
+	hdl := &requestHandler{
+		beforeFilterArray:   this.beforeFilterArray,
+		afterFilterArray:    this.afterFilterArray,
+		method:              method,
+		uri:                 uri,
+		handleFunc:          reflect.ValueOf(fn),
+		handleFuncType:      typeof,
+		handleFuncParamType: second,
+		parameterMapper:     make(map[string]*parameter),
+	}
+
+	for i := 0; i < second.NumField(); i++ {
+		kind := second.Field(i).Type.Kind()
+		if kind == reflect.Ptr || kind == reflect.Func || kind == reflect.Map || kind == reflect.Slice {
 			continue
 		}
 
-		if kind == reflect.Struct {
-			for j := 0; j < typeof.In(i).NumField(); j++ {
-				tag := strings.Trim(typeof.In(i).Field(j).Tag.Get("web"), " ")
-				if len(tag) == 0 {
-					continue
-				}
-				arr := strings.Split(tag, ",")
-				notNull := false
-				if len(arr) > 1 && strings.Trim(arr[1]) == "required" {
-					notNull = true
-				}
-				name := strings.Trim(arr[0])
-				hdl.handleFuncParams[name] = &parameter{
-					NotNull: notNull,
-					Type:    typeof.In(i).Field(j).Type,
-				}
-			}
+		tag := strings.Trim(second.Field(i).Tag.Get("form"), " ")
+		if len(tag) == 0 {
 			continue
 		}
 
-		hdl.handleFuncParams[typeof.In(i).Name()] = &parameter{
-			NotNull: true,
-			Type:    typeof.In(i),
+		arr := strings.Split(tag, ",")
+		notNull := false
+		if len(arr) > 1 && strings.Trim(arr[1], " ") == "required" {
+			notNull = true
+		}
+
+		name := strings.Trim(arr[0], " ")
+		hdl.parameterMapper[name] = &parameter{
+			NotNull: notNull,
+			Field:   second.Field(i).Name,
+			Type:    second.Field(i).Type,
 		}
 	}
 
@@ -188,16 +210,21 @@ func response(w http.ResponseWriter, r *Response) {
 	var data []byte
 	if len(r.contentType) == 0 || r.contentType == "application/json" {
 		r.contentType = "application/json"
-		data, err = json.Marshal(r.content)
+		data, err = json.Marshal(r)
 		if err != nil {
 			data = []byte(err.Error())
+			fmt.Println("err: ", err.Error())
 		}
 
 	} else {
-		data = []byte(r.content.(string))
+		data = []byte(r.Content.(string))
 	}
 
 	w.WriteHeader(r.status)
 	w.Header().Set("Content-Type", r.contentType)
 	w.Write(data)
+}
+
+func Serve(addr string, r *router) {
+	http.ListenAndServe(addr, r)
 }
