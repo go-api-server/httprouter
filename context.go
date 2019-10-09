@@ -5,8 +5,8 @@ import (
 )
 
 type Context struct {
-	RequestID string
 	Request   *http.Request
+	RequestID string
 	data      map[string]interface{}
 }
 

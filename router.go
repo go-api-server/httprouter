@@ -13,8 +13,13 @@ import (
 	"time"
 )
 
+type uriPart struct {
+	mapper map[string][]int
+}
+
 var (
 	uriHandlerMapper         map[string]*requestHandler
+	uriPartMapper            map[int]*uriPart
 	initUriHandlerMapperOnce sync.Once
 )
 
@@ -44,6 +49,7 @@ func NewSubRouter(uriPrefix string) *router {
 func initRouter() {
 	initUriHandlerMapperOnce.Do(func() {
 		uriHandlerMapper = make(map[string]*requestHandler)
+		uriPartMapper = make(map[int]*uriPart)
 	})
 }
 
@@ -57,11 +63,35 @@ func getRequestKey(method string, uri string, uriPrefix string) string {
 func getRequestHandler(method string, uri string) *requestHandler {
 	arr := strings.Split(uri, "?")
 	key := getRequestKey(method, arr[0], "")
+
 	hdl, ok := uriHandlerMapper[key]
+	if ok {
+		return hdl
+	}
+
+	arr = strings.Split(key, "/")
+	cnt := len(arr)
+	part, ok := uriPartMapper[cnt]
 	if !ok {
+		fmt.Println("uri len not match")
 		return nil
 	}
-	return hdl
+
+	for key, idx := range part.mapper {
+		for _, i := range idx {
+			arr[i] = ":"
+		}
+		uri := strings.Join(arr, "/")
+		if key == uri {
+			hdl, ok := uriHandlerMapper[key]
+			if ok {
+				return hdl
+			}
+			break
+		}
+	}
+
+	return nil
 }
 
 // ServeHTTP for http.Handler interface
@@ -74,8 +104,8 @@ func (this *router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	ctx := &Context{
-		RequestID: fmt.Sprintf("%d_%d", time.Now().UnixNano(), rand.Intn(1000000)),
 		Request:   r,
+		RequestID: fmt.Sprintf("%d_%d", time.Now().UnixNano(), rand.Intn(1000000)),
 		data:      make(map[string]interface{}),
 	}
 
@@ -141,18 +171,56 @@ func (this *router) SetRequestHandler(method string, uri string, fn interface{})
 		return
 	}
 
-	key := getRequestKey(method, uri, this.uriPrefix)
+	key := ""
 	hdl := &requestHandler{
 		beforeFilterArray:   this.beforeFilterArray,
 		afterFilterArray:    this.afterFilterArray,
 		method:              method,
 		uri:                 uri,
+		uriPart:             make(map[int]string),
 		handleFunc:          reflect.ValueOf(fn),
 		handleFuncType:      typeof,
 		handleFuncParamType: second,
 		parameterMapper:     make(map[string]*parameter),
 	}
 
+	if strings.Contains(uri, ":") {
+		arr := strings.Split(uri, "/")
+		cnt := len(arr)
+		idx := make([]int, 0, 1)
+		res := make([]string, cnt)
+		for i, v := range arr {
+			part := strings.Split(v, ":")
+			if len(part) > 1 {
+				hdl.uriPart[i] = part[1]
+				idx = append(idx, i)
+				res[i] = ":"
+			} else {
+				res[i] = part[0]
+			}
+		}
+
+		key = getRequestKey(method, strings.Join(res, "/"), this.uriPrefix)
+		m, ok := uriPartMapper[cnt]
+		if ok {
+			_, ok := m.mapper[key]
+			if ok {
+				return
+			}
+			m.mapper[key] = idx
+		} else {
+			m = &uriPart{
+				mapper: make(map[string][]int),
+			}
+			m.mapper[key] = idx
+			uriPartMapper[cnt] = m
+		}
+
+	} else {
+		key = getRequestKey(method, uri, this.uriPrefix)
+	}
+
+	// 处理参数
 	for i := 0; i < second.NumField(); i++ {
 		kind := second.Field(i).Type.Kind()
 		if kind == reflect.Ptr || kind == reflect.Func || kind == reflect.Map || kind == reflect.Slice {
@@ -166,7 +234,7 @@ func (this *router) SetRequestHandler(method string, uri string, fn interface{})
 
 		arr := strings.Split(tag, ",")
 		notNull := false
-		if len(arr) > 1 && strings.Trim(arr[1], " ") == "required" {
+		if len(arr) > 1 && strings.Trim(arr[1], " ") == "notnull" {
 			notNull = true
 		}
 

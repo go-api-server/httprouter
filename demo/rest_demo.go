@@ -12,7 +12,8 @@ type query struct {
 }
 
 type body struct {
-	Name    string `json:"name"`
+	Id      int64  `json:"id" form:"id"`
+	Name    string `json:"name" form:"name"`
 	Content string `json:"content"`
 }
 
@@ -26,9 +27,14 @@ func Say(ctx *rest.Context, data body) *rest.Response {
 	return rest.Json(data)
 }
 
+func GetUser(ctx *rest.Context, data body) *rest.Response {
+	return rest.Json(data)
+}
+
 func main() {
 	r := rest.NewRouter()
 	r.Get("/", Home)
 	r.Post("/say", Say)
+	r.Get("/user/:id", GetUser)
 	rest.Serve(":88", r)
 }

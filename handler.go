@@ -13,6 +13,7 @@ type requestHandler struct {
 	afterFilterArray    []FilterFunc
 	method              string
 	uri                 string
+	uriPart             map[int]string
 	handleFunc          reflect.Value
 	handleFuncType      reflect.Type
 	handleFuncParamType reflect.Type
@@ -40,12 +41,28 @@ func (this *requestHandler) doRequest(ctx *Context) *Response {
 		isPostJson = true
 	}
 
+	uriParameterMapper := make(map[string]string)
+	if len(this.uriPart) > 0 {
+		uri := strings.Split(ctx.Request.RequestURI, "?")
+		arr := strings.Split(uri[0], "/")
+		cnt := len(arr)
+		for i, k := range this.uriPart {
+			if i >= cnt {
+				continue
+			}
+			uriParameterMapper[k] = arr[i]
+		}
+	}
+
 	if len(this.parameterMapper) > 0 {
 		arg := reflect.New(this.handleFuncParamType)
 		arg = arg.Elem()
 
 		for name, param := range this.parameterMapper {
-			str := ctx.Request.FormValue(name)
+			str, ok := uriParameterMapper[name]
+			if !ok {
+				str = ctx.Request.FormValue(name)
+			}
 
 			if len(str) == 0 && param.NotNull {
 				if isPostJson {
